@@ -1,3 +1,12 @@
+# CocoaPods captures Node output as binary; preserve UTF-8 for Korean paths.
+module Utf8NodeOutput
+  def execute_command(executable, *arguments)
+    output = super
+    executable == 'node' ? output.force_encoding(Encoding::UTF_8) : output
+  end
+end
+Pod::Executable.singleton_class.prepend(Utf8NodeOutput)
+
 # Resolve react_native_pods.rb with node to allow for hoisting
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
