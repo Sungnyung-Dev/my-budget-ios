@@ -49,7 +49,7 @@ npm test -- --runInBand --watchman=false
 
 | 변수 | 기본값 | 용도 |
 | --- | --- | --- |
-| `API_BASE_URL` | 미설정 시 API 호출에서 설정 오류 | HTTPS API 주소. `.env.example`은 `https://budget-api.ecoma.kro.kr`로 설정합니다. 명시적인 API 조회에서만 사용합니다. |
+| `API_BASE_URL` | 미설정 시 API 호출에서 설정 오류 | HTTPS API 주소. `.env.example`은 `https://budget-api.ecoma.kro.kr`로 설정합니다. 명시적인 API 함수 호출에서만 사용합니다. |
 | `SEED_DEMO_DATA` | `true` | 저장 데이터가 없는 최초 실행에서 데모 거래 생성. `false`면 기본 카테고리만 생성합니다. 기존 거래는 변경하거나 삭제하지 않습니다. |
 
 `.env`를 수정한 뒤 Metro를 종료하고 `npm start -- --reset-cache`로 다시 시작합니다. 배포 앱에는 다시 번들링·빌드해야 반영됩니다. 값은 앱 번들에 포함되므로 서버 비밀번호나 비밀 키를 넣지 않습니다. 이 설정은 JavaScript용이며 `Info.plist`나 Gradle의 네이티브 환경변수를 설정하지 않습니다.
@@ -78,12 +78,16 @@ npm test -- --runInBand --watchman=false
 | `src/domain/selectors.ts` | 월별·연간·카테고리 통계 계산 |
 | `src/data/mockData.ts` | 최초 실행 데모 데이터 |
 | `src/data/ledgerRepository.ts` | 저장소 인터페이스, AsyncStorage 구현, 기존 검증 함수 재내보내기 |
-| `src/api/client.ts` | 공통 HTTPS GET 클라이언트, 타임아웃, JSON 검증, 사용자용 오류 |
+| `src/api/client.ts` | 공통 HTTPS GET/POST/PATCH/DELETE 클라이언트, 타임아웃, JSON·204 처리, 사용자용 오류 |
 | `src/api/ledgerApi.ts` | `GET /api/v1/ledger` 조회. 로컬 저장·상태 변경 없음 |
+| `src/api/categoryApi.ts` | 카테고리 목록·생성·이름 수정·삭제 및 요청 타입 |
+| `src/api/transactionApi.ts` | 거래 목록·단건 조회·생성·부분 수정·삭제 및 요청 타입 |
+| `src/api/validation.ts` | 요청 필드·날짜·금액·ID 검증과 경로 인코딩 |
 | `src/state/LedgerProvider.tsx` | 공유 상태, 저장 성공 후 상태 반영, 실패 처리 |
 | `__tests__/ledger.test.ts` | 통계·CRUD·날짜·검증·영속성 테스트 |
 | `__tests__/App.integration.test.tsx` | 화면 이동과 거래·카테고리 편집 통합 테스트 |
 | `__tests__/api.test.ts` | API 조회·HTTP/네트워크/타임아웃·응답 검증·로컬 데이터 보존 테스트 |
+| `__tests__/crudApi.test.ts` | CRUD 요청·응답 계약, 부분 수정, 204, 검증·오류·자동 재시도 부재 테스트 |
 
 `package.json`, `package-lock.json`, `jest.config.js`, `jest.setup.js`도 변경했습니다. CocoaPods 설치 결과인 `ios/Podfile.lock`, workspace와 Xcode 프로젝트 연결, privacy manifest를 포함했습니다. `Info.plist`에는 앱 표시 이름과 밝은 테마를 설정했습니다.
 
@@ -111,7 +115,7 @@ npm test -- --runInBand --watchman=false
 
 ## 미지원 기능
 
-백업·복원과 데이터 내보내기는 설정에 미지원으로 표시하는 정보 행입니다. 서버 동기화·데이터 이전·서버 CRUD·로그인·인증·계좌 관리·앱 잠금은 구현하지 않았습니다. API 조회 함수는 구현했지만 화면에 연결하지 않았습니다.
+백업·복원과 데이터 내보내기는 설정에 미지원으로 표시하는 정보 행입니다. 서버 동기화·데이터 이전·로그인·인증·계좌 관리·앱 잠금은 구현하지 않았습니다. API 조회·CRUD 통신 함수는 구현했지만 Provider와 화면에 연결하지 않았습니다.
 
 ## API 조회 사용법
 
@@ -157,11 +161,40 @@ const remoteLedger = await getLedger(client);
 | `HTTP` | 2xx가 아닌 응답. `status` 보존, 404·429·5xx 메시지 구분 |
 | `NETWORK` | 연결 실패 또는 응답 본문 수신 실패 |
 | `TIMEOUT` | 대기 시간 초과 |
-| `INVALID_RESPONSE` | JSON 파싱 또는 Ledger 검증 실패. `status` 보존 |
+| `INVALID_REQUEST` | 요청 필드·값·ID·조회 조건 또는 JSON 직렬화 오류. 요청하지 않음 |
+| `INVALID_RESPONSE` | JSON 파싱·응답 데이터 검증 또는 예상한 204 계약 불일치. `status` 보존 |
 
 모든 오류의 `message`는 사용자에게 표시할 수 있는 한국어 문구입니다. 서버의 원문 오류 본문이나 내부 오류 문자열은 노출하지 않습니다. `LedgerProvider`는 계속 `localLedgerRepository`를 사용하며 앱 시작·화면 이동·거래·카테고리 CRUD에서 API를 자동 호출하지 않습니다.
 
-2026-11-15 검증: TypeScript·ESLint 통과, Jest 3개 스위트 **79개 테스트 통과**(기존 22개 포함). 배포 API의 읽기 전용 GET은 HTTP 200을 반환했고, 구현한 `getLedger()`도 Node에서 실행해 버전 1, 카테고리 10개, 거래 0개의 실제 응답을 검증했습니다. 네이티브 기기에서의 API 통신은 별도 확인이 필요합니다.
+## 거래·카테고리 API 사용법
+
+아래 함수는 `categoryApi.ts`와 `transactionApi.ts`에서 가져옵니다. 모든 함수의 마지막 인수에 `createApiClient()`로 만든 클라이언트를 선택적으로 전달할 수 있으며, 생략하면 환경 설정의 주소를 사용합니다.
+
+| 함수 | 요청 | 반환 타입 |
+| --- | --- | --- |
+| `getCategories(query?)` | `GET /api/v1/categories` | `Promise<Category[]>` |
+| `createCategory(input)` | `POST /api/v1/categories` | `Promise<Category>` |
+| `updateCategory(id, input)` | `PATCH /api/v1/categories/:id` | `Promise<Category>` |
+| `deleteCategory(id)` | `DELETE /api/v1/categories/:id` | `Promise<void>` |
+| `getTransactions(query?)` | `GET /api/v1/transactions` | `Promise<Transaction[]>` |
+| `getTransaction(id)` | `GET /api/v1/transactions/:id` | `Promise<Transaction>` |
+| `createTransaction(input)` | `POST /api/v1/transactions` | `Promise<Transaction>` |
+| `updateTransaction(id, input)` | `PATCH /api/v1/transactions/:id` | `Promise<Transaction>` |
+| `deleteTransaction(id)` | `DELETE /api/v1/transactions/:id` | `Promise<void>` |
+
+- 카테고리 생성은 `CreateCategoryInput = Omit<Category, 'id'>`의 `name`, `type`, `symbol`을 모두 보냅니다. 수정은 `UpdateCategoryInput = Pick<Category, 'name'>`으로 이름만 보냅니다.
+- 거래 생성은 기존 `TransactionInput`의 다섯 필드(`type`, `amount`, `categoryId`, `date`, `memo`)가 모두 필요합니다. 빈 메모도 `memo: ''`로 지정합니다. 수정은 `Partial<TransactionInput>` 중 하나 이상을 보내며 생략하거나 `undefined`인 필드는 전송하지 않습니다. `null`, 빈 수정 객체, 알 수 없는 필드는 거부합니다.
+- 이름·메모는 서버 규칙에 맞춰 trim 후 길이를 검사합니다. 숫자 문자열·소수 금액, 잘못된 날짜·유형·아이콘·ID도 요청 전에 거부합니다. 생성·수정 요청에 `id`를 지정하면 거부하며 새 ID는 서버 응답에서 받습니다.
+- 카테고리 조회 조건은 `{ type?: 'expense' | 'income' }`, 거래 조회 조건은 `{ from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD' }`입니다. 시작일은 포함하고 종료일은 제외합니다. 같은 날짜는 허용하며 시작일이 종료일보다 늦으면 거부합니다.
+- 자원 ID는 한 경로 구간으로 인코딩합니다. ID 길이는 서버와 같은 1~191자이며, 경로가 정규화되는 `.`·`..`와 인코딩할 수 없는 ID는 거부합니다.
+
+생성은 201의 저장된 단건 객체, 수정은 200의 최종 단건 객체를 검증해 반환합니다. 삭제는 204에서 JSON을 읽지 않고 `undefined`로 완료합니다. 객체·목록을 반환해야 하는 요청의 204와 삭제의 예상 밖 응답은 `INVALID_RESPONSE`입니다. 공통 클라이언트는 `post(path, body, validate)`, `patch(path, body, validate)`, `delete(path)`도 제공하며 JSON 요청에만 `Content-Type: application/json`을 보냅니다.
+
+개별 응답은 기존 도메인 필드 검증을 공유합니다. 중복 ID·잘못된 목록 형식도 거부하고, 카테고리 참조·거래 유형의 교차 검증은 전체 Ledger 검증과 서버에서 수행합니다. 현재 거래와 수정값을 합친 정합성, 카테고리 중복·존재 여부·사용 중 삭제 제한은 서버가 최종 판단합니다. HTTP 409는 `ApiError.code === 'HTTP'`, `status === 409`로 구분합니다.
+
+쓰기 요청에는 자동 재시도가 없습니다. 타임아웃·연결 끊김·응답 검증 실패가 발생하면 서버에서 이미 처리되었을 수 있으므로, 연동 시에는 최신 데이터를 조회해 결과를 확인한 뒤 재시도 여부를 결정해야 합니다.
+
+2026-11-15 검증: TypeScript·ESLint 통과, Jest 4개 스위트 **208개 테스트 통과**(기존 79개 포함). 모든 CRUD 테스트의 `fetch`는 모의 함수로 대체했습니다. 운영 서버는 GET만 실행했으며, 새 `getCategories()`·`getTransactions()`와 기존 `getLedger()`를 Node에서 실행해 카테고리 10개, 거래 0개, 버전 1을 확인했습니다. 운영 POST·PATCH·DELETE와 네이티브 기기 통신은 실행하지 않았습니다.
 
 ## 로컬 데이터의 안전한 이전과 다음 변경 범위
 
@@ -174,4 +207,6 @@ const remoteLedger = await getLedger(client);
 3. 사용자가 선택한 업로드·병합 정책에 따라 처리합니다. 원자적 가져오기 또는 단계별 복구, 재시도 시 중복 방지, 카테고리 ID 매핑을 지원할 서버 계약이 먼저 필요합니다. 거래가 없는 서버에도 기본 카테고리가 있을 수 있으므로 카테고리만 보고 이전 완료를 판단하지 않습니다.
 4. 서버 저장 후 다시 조회·검증해 거래 및 카테고리 연결·건수·금액이 일치하는지 확인한 뒤 이전 완료 상태를 별도 기록합니다. 실패·취소 시 로컬 원본과 백업을 유지하며, 서버 전환과 원본 정리는 분리합니다.
 
-다음 단계의 구현 범위는 서버 쓰기 API 계약 확인, 이전·충돌 정책과 사용자 선택 UI, `LedgerRepository`/`LedgerProvider` 연결, 서버 ID 및 저장 결과 반영, 로딩·오류·재시도 UI입니다. 현재 `load()`/`save()` 전체 스냅샷 계약에 맞는 서버 저장 API가 없고 개별 CRUD만 있다면 저장소와 Provider의 mutation 계약도 함께 조정해야 합니다. 조회만 서버로 바꾸고 저장은 로컬로 남겨 두는 혼합 전환은 피합니다.
+다음 단계에서는 기존 `load()`/`save()` 전체 스냅샷 계약을 개별 서버 CRUD에 맞게 조정하고 `LedgerProvider`의 mutation 경로를 연결해야 합니다. 로컬 `saveTransaction`·`saveCategory`에서 ID를 먼저 생성하는 대신 서버가 반환한 ID·정규화된 최종 객체를 저장 성공 후 공유 상태에 반영하고, 삭제는 204 성공 후 반영합니다. 카테고리 생성에는 기존 기본 아이콘 규칙에 맞는 `symbol`을 전달하고 수정은 이름만 전달해야 합니다.
+
+초기 로드는 일관된 스냅샷을 제공하는 `getLedger()`를 사용하고, 409·처리 결과가 불명확한 쓰기 실패는 재조회로 확인합니다. 기존 저장 중 중복 방지·실패 시 편집 상태 유지에 네트워크 로딩·오류 처리를 연결하고, 로컬 데이터 이전·충돌 정책과 사용자 선택 UI는 별도로 구현합니다. 조회만 서버로 바꾸고 저장은 로컬로 남겨 두는 혼합 전환은 피합니다. 이번 변경에서는 Provider·저장소·UI를 수정하지 않았습니다.
