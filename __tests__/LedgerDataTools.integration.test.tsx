@@ -1,9 +1,11 @@
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NativeModules, Share, Text, TextInput } from 'react-native';
+import { NativeModules, Share, Text } from 'react-native';
 import Renderer, { act, ReactTestInstance } from 'react-test-renderer';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LedgerApp } from '../src/LedgerApp';
+import { LedgerDataTools } from '../src/components/LedgerDataTools';
+import { LedgerRepository } from '../src/data/ledgerRepository';
 import { LedgerData } from '../src/domain/types';
 import { LedgerProvider, useLedger } from '../src/state/LedgerProvider';
 
@@ -51,6 +53,15 @@ const response = (value: unknown) =>
   } as Response);
 let tree: Renderer.ReactTestRenderer;
 let observed: LedgerData;
+const repository: LedgerRepository = {
+  load: async () => local,
+  createTransaction: jest.fn(),
+  updateTransaction: jest.fn(),
+  deleteTransaction: jest.fn(),
+  createCategory: jest.fn(),
+  updateCategory: jest.fn(),
+  deleteCategory: jest.fn(),
+};
 function Probe() {
   observed = useLedger().data;
   return null;
@@ -90,8 +101,8 @@ beforeEach(async () => {
   await act(async () => {
     tree = Renderer.create(
       <SafeAreaProvider>
-        <LedgerProvider>
-          <LedgerApp />
+        <LedgerProvider repository={repository}>
+          <LedgerDataTools />
           <Probe />
         </LedgerProvider>
       </SafeAreaProvider>,
@@ -106,8 +117,7 @@ afterEach(async () => {
   jest.restoreAllMocks();
 });
 
-test('settings exposes manual export without making automatic API or storage writes', async () => {
-  await press('설정');
+test('retained legacy tool exports only when explicitly mounted and invoked', async () => {
   expect(button('JSON 백업 내보내기')).toBeDefined();
   expect(button('서버 데이터와 비교')).toBeDefined();
   expect(fetchMock).not.toHaveBeenCalled();
@@ -128,7 +138,6 @@ test('settings exposes manual export without making automatic API or storage wri
 
 test('empty server preview displays counts and totals while the provider and disk retain local data', async () => {
   fetchMock.mockResolvedValue(response(empty));
-  await press('설정');
   await press('서버 데이터와 비교');
   expect(
     tree.root.findByProps({
@@ -156,7 +165,6 @@ test('empty server preview displays counts and totals while the provider and dis
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock.mock.calls[0][1]?.method).toBe('GET');
   expect(AsyncStorage.setItem).not.toHaveBeenCalled();
-  await press('홈');
   expect(observed!).toEqual(local);
 });
 
@@ -174,7 +182,6 @@ test('preview displays conflicting IDs and the fields that differ', async () => 
       ],
     }),
   );
-  await press('설정');
   await press('서버 데이터와 비교');
   expect(hasText('카테고리 ID 겹침: 동일 내용 1건 · 내용 다름 1건')).toBe(true);
   expect(hasText('food: 이름 다름')).toBe(true);
@@ -188,7 +195,6 @@ test('network failure shows a safe message and manual retry can produce a previe
   fetchMock
     .mockRejectedValueOnce(new TypeError('private network error'))
     .mockResolvedValueOnce(response(empty));
-  await press('설정');
   await press('서버 데이터와 비교');
   expect(hasText('인터넷 연결을 확인')).toBe(true);
   expect(hasText('private network error')).toBe(false);
@@ -205,7 +211,6 @@ test('invalid server response clears a previous preview and leaves local state i
     .mockResolvedValueOnce(
       response({ version: 1, categories: null, transactions: [] }),
     );
-  await press('설정');
   await press('서버 데이터와 비교');
   expect(hasText('로컬·서버 비교')).toBe(true);
   await press('서버 데이터와 비교');
@@ -216,7 +221,6 @@ test('invalid server response clears a previous preview and leaves local state i
 });
 
 test('invalid local data blocks both export and server comparison without overwriting it', async () => {
-  await press('설정');
   jest
     .mocked(AsyncStorage.getItem)
     .mockResolvedValueOnce('broken')
@@ -235,7 +239,6 @@ test('cancelled export is distinguished from completion', async () => {
     action: Share.dismissedAction,
     activityType: undefined,
   });
-  await press('설정');
   await press('JSON 백업 내보내기');
   expect(hasText('백업 내보내기를 취소했습니다')).toBe(true);
   expect(hasText('공유 작업을 완료했습니다')).toBe(false);
@@ -249,7 +252,6 @@ test('pending comparison disables both actions and ignores duplicate presses', a
       resolve = done;
     }),
   );
-  await press('설정');
   let work!: Promise<void>;
   await act(async () => {
     work = button('서버 데이터와 비교').props.onPress();
@@ -266,24 +268,20 @@ test('pending comparison disables both actions and ignores duplicate presses', a
   expect(hasText('로컬·서버 비교')).toBe(true);
 });
 
-test('normal transaction editing after comparison continues to save locally', async () => {
-  fetchMock.mockResolvedValue(response(empty));
-  await press('설정');
-  await press('서버 데이터와 비교');
-  await press('내역');
-  await press('선택한 날짜에 거래 추가');
+test('normal settings hides legacy local backup and comparison controls', async () => {
   await act(async () => {
-    tree.root
-      .findAllByType(TextInput)
-      .find(node => node.props.accessibilityLabel === '거래 금액')!
-      .props.onChangeText('500');
+    tree.unmount();
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <LedgerProvider repository={repository}>
+          <LedgerApp />
+        </LedgerProvider>
+      </SafeAreaProvider>,
+    );
   });
-  await press('거래 저장');
-  expect(observed!.transactions).toHaveLength(3);
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
-  expect(
-    JSON.parse((await AsyncStorage.getItem(key)) as string).transactions,
-  ).toHaveLength(3);
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(fetchMock.mock.calls[0][1]?.method).toBe('GET');
+  await press('설정');
+  expect(button('JSON 백업 내보내기')).toBeUndefined();
+  expect(button('서버 데이터와 비교')).toBeUndefined();
+  expect(hasText('서버 저장')).toBe(true);
+  expect(AsyncStorage.getItem).not.toHaveBeenCalled();
 });

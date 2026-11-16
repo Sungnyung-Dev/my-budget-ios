@@ -12,6 +12,7 @@ import { parseAmount } from '../domain/ledger';
 import { Transaction, TransactionType } from '../domain/types';
 import { useLedger } from '../state/LedgerProvider';
 import { BottomSheet } from './BottomSheet';
+import { ServerSyncNotice } from './ServerSyncNotice';
 import { EmptyState, SegmentedControl } from './Common';
 import { colors, ui } from './theme';
 export function TransactionSheet({
@@ -26,6 +27,7 @@ export function TransactionSheet({
   onManageCategories: () => void;
 }) {
   const ledger = useLedger();
+  const busy = ledger.saving || ledger.refreshing;
   const [type, setType] = useState<TransactionType>(
     transaction?.type ?? 'expense',
   );
@@ -73,7 +75,7 @@ export function TransactionSheet({
     <BottomSheet
       title={transaction ? '거래 상세 · 수정' : '거래 추가'}
       onClose={onClose}
-      busy={ledger.saving}
+      busy={busy}
     >
       <SegmentedControl
         value={type}
@@ -82,7 +84,7 @@ export function TransactionSheet({
           { value: 'income', label: '수입' },
         ]}
         onChange={next => {
-          if (ledger.saving) {
+          if (busy) {
             return;
           }
           setType(next);
@@ -106,7 +108,7 @@ export function TransactionSheet({
           placeholderTextColor="#bbb"
           maxLength={16}
           style={styles.amountInput}
-          editable={!ledger.saving}
+          editable={!busy}
           returnKeyType="done"
           inputAccessoryViewButtonLabel="완료"
           onSubmitEditing={Keyboard.dismiss}
@@ -121,7 +123,7 @@ export function TransactionSheet({
               key={category.id}
               accessibilityRole="button"
               accessibilityState={{ selected: categoryId === category.id }}
-              disabled={ledger.saving}
+              disabled={busy || ledger.needsRefresh}
               onPress={() => setCategoryId(category.id)}
               style={[
                 styles.chip,
@@ -165,10 +167,11 @@ export function TransactionSheet({
         placeholderTextColor="#aaa"
         maxLength={100}
         style={ui.input}
-        editable={!ledger.saving}
+        editable={!busy}
         returnKeyType="done"
         onSubmitEditing={Keyboard.dismiss}
       />
+      <ServerSyncNotice showReload={!!error} onReloaded={() => setError('')} />
       {!!error && (
         <Text accessibilityRole="alert" style={ui.error}>
           {error}
@@ -176,15 +179,17 @@ export function TransactionSheet({
       )}
       <Pressable
         accessibilityRole="button"
-        disabled={ledger.saving || !categories.length}
+        disabled={busy || ledger.needsRefresh || !categories.length}
         onPress={save}
         style={[
           ui.primary,
-          (ledger.saving || !categories.length) && ui.disabled,
+          (busy || ledger.needsRefresh || !categories.length) && ui.disabled,
         ]}
       >
         <Text style={ui.primaryText}>
-          {ledger.saving
+          {ledger.refreshing
+            ? '서버 확인 중…'
+            : ledger.saving
             ? '저장 중…'
             : transaction
             ? '변경사항 저장'
@@ -194,7 +199,7 @@ export function TransactionSheet({
       {transaction && !confirmDelete && (
         <Pressable
           accessibilityRole="button"
-          disabled={ledger.saving}
+          disabled={busy || ledger.needsRefresh}
           onPress={() => setConfirmDelete(true)}
           style={ui.secondary}
         >
@@ -209,7 +214,7 @@ export function TransactionSheet({
           <View style={styles.confirmButtons}>
             <Pressable
               accessibilityRole="button"
-              disabled={ledger.saving}
+              disabled={busy}
               onPress={() => setConfirmDelete(false)}
               style={[ui.secondary, styles.confirmButton]}
             >
@@ -217,7 +222,7 @@ export function TransactionSheet({
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              disabled={ledger.saving}
+              disabled={busy || ledger.needsRefresh}
               onPress={remove}
               style={[ui.primary, styles.confirmButton]}
             >
@@ -228,7 +233,7 @@ export function TransactionSheet({
       )}
       <Pressable
         accessibilityRole="button"
-        disabled={ledger.saving}
+        disabled={busy}
         onPress={onClose}
         style={styles.cancel}
       >

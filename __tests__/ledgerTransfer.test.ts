@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeModules, Platform, Share } from 'react-native';
 import { ApiError } from '../src/api/client';
-import { readStoredLedger } from '../src/data/ledgerRepository';
+import { readStoredLedger } from '../src/data/localLedgerRepository';
 import {
   compareLocalAndServerLedger,
   exportLocalLedger,

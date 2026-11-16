@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CategorySheet } from './components/CategorySheet';
 import { Icon, IconName } from './components/Icon';
+import { ServerSyncNotice } from './components/ServerSyncNotice';
 import { TransactionSheet } from './components/TransactionSheet';
 import { colors, ui } from './components/theme';
 import {
@@ -39,7 +40,8 @@ type Sheet =
   | { kind: 'category'; category?: Category; type: TransactionType }
   | null;
 export function LedgerApp() {
-  const { status, loadError, reload } = useLedger();
+  const { status, loadError, reload, saving, refreshing, needsRefresh } =
+    useLedger();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('history');
   const [categories, setCategories] = useState(false);
@@ -119,6 +121,11 @@ export function LedgerApp() {
         </View>
       ) : (
         <>
+          {!sheet && (
+            <View style={styles.syncNotice}>
+              <ServerSyncNotice />
+            </View>
+          )}
           <View style={styles.body}>
             <Animated.View style={[styles.content, { opacity }]}>
               <ScrollView
@@ -174,6 +181,7 @@ export function LedgerApp() {
                 accessibilityRole="button"
                 accessibilityLabel="선택한 날짜에 거래 추가"
                 testID="add-transaction"
+                disabled={saving || refreshing || needsRefresh}
                 onPress={() => setSheet({ kind: 'transaction', date })}
                 style={({ pressed }) => [styles.fab, pressed && styles.pressed]}
               >
@@ -234,6 +242,7 @@ export function LedgerApp() {
   );
 }
 const styles = StyleSheet.create({
+  syncNotice: { paddingHorizontal: 22 },
   root: { flex: 1, backgroundColor: colors.white },
   body: { flex: 1 },
   content: { flex: 1 },

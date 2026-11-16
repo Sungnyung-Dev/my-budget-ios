@@ -10,6 +10,7 @@ import {
 import { Category, TransactionType } from '../domain/types';
 import { useLedger } from '../state/LedgerProvider';
 import { BottomSheet } from './BottomSheet';
+import { ServerSyncNotice } from './ServerSyncNotice';
 import { colors, ui } from './theme';
 export function CategorySheet({
   category,
@@ -21,6 +22,7 @@ export function CategorySheet({
   onClose: () => void;
 }) {
   const ledger = useLedger();
+  const busy = ledger.saving || ledger.refreshing;
   const [name, setName] = useState(category?.name ?? '');
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState(false);
@@ -51,7 +53,7 @@ export function CategorySheet({
     <BottomSheet
       title={category ? '카테고리 수정' : '카테고리 추가'}
       onClose={onClose}
-      busy={ledger.saving}
+      busy={busy}
     >
       <Text style={ui.label}>유형</Text>
       <View style={styles.type}>
@@ -68,10 +70,11 @@ export function CategorySheet({
         placeholder="카테고리 이름 입력"
         placeholderTextColor="#aaa"
         maxLength={20}
-        editable={!ledger.saving}
+        editable={!busy}
         returnKeyType="done"
         onSubmitEditing={save}
       />
+      <ServerSyncNotice showReload={!!error} onReloaded={() => setError('')} />
       {!!error && (
         <Text accessibilityRole="alert" style={ui.error}>
           {error}
@@ -80,11 +83,13 @@ export function CategorySheet({
       <Pressable
         accessibilityRole="button"
         onPress={save}
-        disabled={ledger.saving}
-        style={[ui.primary, ledger.saving && ui.disabled]}
+        disabled={busy || ledger.needsRefresh}
+        style={[ui.primary, (busy || ledger.needsRefresh) && ui.disabled]}
       >
         <Text style={ui.primaryText}>
-          {ledger.saving
+          {ledger.refreshing
+            ? '서버 확인 중…'
+            : ledger.saving
             ? '저장 중…'
             : category
             ? '이름 변경 저장'
@@ -94,10 +99,15 @@ export function CategorySheet({
       {category && !confirm && (
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: uses > 0 || ledger.saving }}
+          accessibilityState={{
+            disabled: uses > 0 || busy || ledger.needsRefresh,
+          }}
           onPress={() => setConfirm(true)}
-          disabled={uses > 0 || ledger.saving}
-          style={[ui.secondary, (uses > 0 || ledger.saving) && ui.disabled]}
+          disabled={uses > 0 || busy || ledger.needsRefresh}
+          style={[
+            ui.secondary,
+            (uses > 0 || busy || ledger.needsRefresh) && ui.disabled,
+          ]}
         >
           <Text style={ui.secondaryText}>카테고리 삭제</Text>
         </Pressable>
@@ -116,7 +126,7 @@ export function CategorySheet({
           <Pressable
             accessibilityRole="button"
             onPress={remove}
-            disabled={ledger.saving}
+            disabled={busy || ledger.needsRefresh}
             style={[ui.primary, styles.confirm]}
           >
             <Text style={ui.primaryText}>삭제 확인</Text>
@@ -124,7 +134,7 @@ export function CategorySheet({
           <Pressable
             accessibilityRole="button"
             onPress={() => setConfirm(false)}
-            disabled={ledger.saving}
+            disabled={busy}
             style={ui.secondary}
           >
             <Text style={ui.secondaryText}>삭제 취소</Text>
@@ -134,7 +144,7 @@ export function CategorySheet({
       <Pressable
         accessibilityRole="button"
         onPress={onClose}
-        disabled={ledger.saving}
+        disabled={busy}
         style={ui.secondary}
       >
         <Text style={ui.secondaryText}>취소</Text>

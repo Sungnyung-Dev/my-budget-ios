@@ -2,7 +2,7 @@ import { createMockData } from '../src/data/mockData';
 import {
   validateLedger,
   localLedgerRepository,
-} from '../src/data/ledgerRepository';
+} from '../src/data/localLedgerRepository';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { dateKey, isValidDate, shiftMonth } from '../src/domain/dates';
 import {

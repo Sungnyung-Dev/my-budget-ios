@@ -2,7 +2,7 @@ import { getLedger } from '../api/ledgerApi';
 import { compareLedgers, LedgerComparison } from '../domain/ledgerComparison';
 import { LedgerData } from '../domain/types';
 import { shareBackupFile } from '../native/ledgerBackup';
-import { readStoredLedger } from './ledgerRepository';
+import { readStoredLedger } from './localLedgerRepository';
 
 export class LedgerTransferError extends Error {
   constructor(message: string) {

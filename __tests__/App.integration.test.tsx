@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LedgerApp } from '../src/LedgerApp';
 import { LedgerProvider } from '../src/state/LedgerProvider';
 import { createMockData } from '../src/data/mockData';
-import { LedgerRepository } from '../src/data/ledgerRepository';
+import { jsonResponse, mockLedgerServer } from '../testUtils/mockLedgerServer';
 import { LedgerData } from '../src/domain/types';
 import { getTotals, forMonth } from '../src/domain/selectors';
 import { todayKey } from '../src/domain/dates';
@@ -16,7 +16,12 @@ const textOf = (node: ReactTestInstance): string =>
     .join('');
 let tree: Renderer.ReactTestRenderer;
 let stored: LedgerData;
-let repository: LedgerRepository;
+let server: ReturnType<typeof mockLedgerServer>;
+const originalFetch = globalThis.fetch;
+
+jest.mock('../src/config/env', () => ({
+  env: { apiBaseUrl: 'https://api.example.test' },
+}));
 const button = (label: string) =>
   tree.root
     .findAll(node => typeof node.props.onPress === 'function')
@@ -42,17 +47,13 @@ const hasText = (text: string) =>
   tree.root.findAllByType(Text).some(node => textOf(node).includes(text));
 
 beforeEach(async () => {
-  stored = createMockData();
-  repository = {
-    load: async () => stored,
-    save: jest.fn(async (next: LedgerData) => {
-      stored = next;
-    }),
-  };
+  server = mockLedgerServer(createMockData());
+  stored = server.data;
+  globalThis.fetch = server.fetch;
   await act(async () => {
     tree = Renderer.create(
       <SafeAreaProvider>
-        <LedgerProvider repository={repository}>
+        <LedgerProvider>
           <LedgerApp />
         </LedgerProvider>
       </SafeAreaProvider>,
@@ -63,6 +64,7 @@ afterEach(async () => {
   await act(async () => {
     tree.unmount();
   });
+  globalThis.fetch = originalFetch;
 });
 
 test('calendar navigation, selected date, transaction CRUD and totals stay consistent across tabs', async () => {
@@ -141,14 +143,14 @@ test('calendar navigation, selected date, transaction CRUD and totals stay consi
   expect(stored.transactions.some(row => row.id === added.id)).toBe(false);
   expect(getTotals(forMonth(stored.transactions, selected))).toEqual(before);
 });
-test('failed storage keeps editor open and totals intact, then allows retry and income selection', async () => {
+test('failed server save keeps editor open and totals intact, then allows retry and income selection', async () => {
   const before = stored.transactions.length;
-  jest.spyOn(repository, 'save').mockRejectedValueOnce(new Error('disk full'));
+  server.fetch.mockResolvedValueOnce(jsonResponse({}, 409));
   await press('선택한 날짜에 거래 추가');
   await press('수입');
   await change('거래 금액', '50000');
   await press('거래 저장');
-  expect(hasText('변경사항을 저장하지 못했습니다')).toBe(true);
+  expect(hasText('충돌')).toBe(true);
   expect(stored.transactions).toHaveLength(before);
   await press('거래 저장');
   expect(stored.transactions).toHaveLength(before + 1);

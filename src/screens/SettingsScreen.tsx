@@ -2,11 +2,11 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { EmptyState, Header } from '../components/Common';
 import { Icon } from '../components/Icon';
-import { LedgerDataTools } from '../components/LedgerDataTools';
 import { colors, ui } from '../components/theme';
 import { Category, TransactionType } from '../domain/types';
 import { useLedger } from '../state/LedgerProvider';
 export function SettingsScreen({ onCategories }: { onCategories: () => void }) {
+  const { saving, refreshing, reload } = useLedger();
   return (
     <>
       <Header title="설정" subtitle="가계부를 내 방식대로 관리하세요" />
@@ -23,13 +23,23 @@ export function SettingsScreen({ onCategories }: { onCategories: () => void }) {
       <SettingRow label="통화 단위" value="대한민국 원 (KRW)" />
       <SettingRow label="날짜 형식" value="YYYY-MM-DD" />
       <Text style={styles.label}>데이터</Text>
-      <LedgerDataTools />
-      <SettingRow label="데이터 복원" value="미지원 · 추후 제공" />
+      <SettingRow label="저장 방식" value="서버 저장" />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="서버 데이터 새로고침"
+        disabled={saving || refreshing}
+        onPress={() => reload()}
+        style={[ui.row, (saving || refreshing) && ui.disabled]}
+      >
+        <Text style={ui.rowLabel}>서버 데이터 새로고침</Text>
+        <Text style={styles.value}>
+          {refreshing ? '조회 중…' : '최신 내역 확인'}
+        </Text>
+      </Pressable>
       <Text style={styles.label}>정보</Text>
-      <SettingRow label="앱 버전" value="1.0 · 로컬 데모" />
+      <SettingRow label="앱 버전" value="1.0 · 서버 저장" />
       <Text style={ui.note}>
-        데모 거래로 시작하며 변경사항은 이 기기에 저장됩니다. 앱을 삭제하면
-        저장된 데이터도 삭제됩니다.
+        가계부는 서버에 저장됩니다. 조회·변경에는 인터넷 연결이 필요합니다.
       </Text>
     </>
   );

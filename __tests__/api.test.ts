@@ -5,7 +5,7 @@ import {
   DEFAULT_TIMEOUT_MS,
 } from '../src/api/client';
 import { getLedger } from '../src/api/ledgerApi';
-import { localLedgerRepository } from '../src/data/ledgerRepository';
+import { localLedgerRepository } from '../src/data/localLedgerRepository';
 import { MAX_AMOUNT } from '../src/domain/ledger';
 import { LedgerData } from '../src/domain/types';
 
